@@ -67,4 +67,49 @@ const updateProfile = async (req, res) => {
   }
 };
 
-module.exports = { registerUser, getProfile, updateProfile };
+/**
+ * @function POST /api/requests/:id/complete
+ * @description (Recipient/Admin) Confirms a donation is complete.
+ * @protected
+ */
+
+const completeDonation = async (req, res) => {
+  try {
+    const requestId = req.params.id;
+    const requestRef = db.collection('donation_requests').doc(requestId);
+    const requestDoc = await requestRef.get();
+
+    if (!requestDoc.exists) {
+        return res.status(404).send({ message: "Request not found." });
+    }
+
+    const requestData = requestDoc.data();
+    if (requestData.status !== 'pending_confirmation') {
+        return res.status(400).send({ message: "This request is not pending confirmation." });
+    }
+
+    const donorId = requestData.donorId;
+
+    // --- Core Logic: Update both the request and the donor's profile ---
+    const donorRef = db.collection('users').doc(donorId);
+
+    // Use a batch write to ensure both operations succeed or fail together
+    const batch = db.batch();
+    
+    // 1. Update the request status to 'completed'
+    batch.update(requestRef, { status: 'completed' });
+
+    // 2. Update the donor's lastDonationDate to now
+    batch.update(donorRef, { lastDonationDate: admin.firestore.FieldValue.serverTimestamp() });
+
+    await batch.commit();
+
+    res.status(200).send({ message: "Donation confirmed successfully!" });
+
+} catch (error) {
+    console.error("Error completing donation:", error);
+    res.status(500).send({ message: "Error completing donation." });
+}
+}
+
+module.exports = { registerUser, getProfile, updateProfile, completeDonation };
